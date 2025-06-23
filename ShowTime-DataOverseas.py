@@ -17,8 +17,9 @@ logging.getLogger('ultralytics').setLevel(logging.WARNING)
 # Mostra seleção de modelo usando input()
 print("\nSelecione o Modelo:")
 print("1 - Pré-Treinado")
-print("2 - Overseas-Vo5")
-print("Digite sua escolha (1 ou 2): ", end="")
+print("2 - Overseas-Vo5") 
+print("3 - Overseas-To9")
+print("Digite sua escolha (1, 2 ou 3): ", end="")
 
 # Obtém entrada do usuário
 escolha = input().strip()
@@ -28,6 +29,8 @@ if escolha == '1':
     nome_modelo = "yolov8n.pt"  # Usando YOLOv8n como modelo pré-treinado
 elif escolha == '2':
     nome_modelo = "Vo5.pt"
+elif escolha == '3':
+    nome_modelo = "To9.pt"
 else:
     print("Seleção inválida. Usando Vo5.pt como padrão")
     nome_modelo = "Vo5.pt"
@@ -56,8 +59,15 @@ if not os.path.exists(nome_modelo):
 # Carrega modelo YOLO com verbose=False para suprimir saída
 modelo = YOLO(nome_modelo, verbose=False)
 
-# Abre câmera
-captura = cv2.VideoCapture(0)
+# Pergunta qual câmera usar
+print("\nSelecione a câmera:")
+print("0 - Câmera Principal")
+print("1 - Webcam USB")
+print("Digite sua escolha (0 ou 1): ", end="")
+camera_index = int(input().strip())
+
+# Abre câmera selecionada
+captura = cv2.VideoCapture(camera_index)
 
 # Obtém resolução máxima suportada pela câmera
 largura = int(captura.get(cv2.CAP_PROP_FRAME_WIDTH))
