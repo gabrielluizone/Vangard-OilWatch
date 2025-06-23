@@ -397,15 +397,16 @@ class OverColetor:
                 self.cap.release()
                 self.logger.info("✓ Câmera liberada")
     
-    def analyze_image_from_path(self, image_path_or_url, c=None, show_results=True, save_result=False, output_dir="./results"):
+    def analyze_image_from_path(self, image_path_or_url, c=None, show_results=True, server=False, force_send=True):
         """
         Analisa uma imagem de arquivo local ou URL e plota os resultados
         
         Args:
             image_path_or_url (str): Caminho local da imagem ou URL
+            c (float): Limiar de confiança (usa self.CONFIDENCE_THRESHOLD se None)
             show_results (bool): Se deve mostrar os resultados na tela
-            save_result (bool): Se deve salvar a imagem processada
-            output_dir (str): Diretório para salvar resultados
+            server (bool): Se deve enviar os dados para o servidor
+            force_send (bool): Se deve enviar para o servidor mesmo sem detecções
             
         Returns:
             dict: Resultados da análise com detecções e metadados
@@ -425,7 +426,8 @@ class OverColetor:
             self.logger.info(f"Imagem: {original_image.shape[1]}x{original_image.shape[0]}")
             
             # Carregar modelo
-            if c is None: c = self.CONFIDENCE_THRESHOLD
+            if c is None: 
+                c = self.CONFIDENCE_THRESHOLD
 
             model = YOLO(self.MODEL_PATH, verbose=False)
             
@@ -445,13 +447,16 @@ class OverColetor:
             
             self.logger.info(f"✓ Detecções encontradas: {len(detections)}")
             
+            # Criar imagem processada para exibição/servidor
+            processed_image = results[0].plot()
+            
             # Criar metadados detalhados
             metadata = {
                 'source': image_path_or_url,
                 'analysis_timestamp': analysis_timestamp.isoformat(),
                 'model_info': {
                     'model_path': self.MODEL_PATH,
-                    'confidence_threshold': self.CONFIDENCE_THRESHOLD
+                    'confidence_threshold': c  # Usar o limiar atual da análise
                 },
                 'image_info': {
                     'original_shape': original_image.shape,
@@ -466,8 +471,24 @@ class OverColetor:
                     'total_detections': len(detections),
                     'max_confidence': max([d['confidence'] for d in detections]) if detections else 0,
                     'classes_detected': list(set([d['class'] for d in detections])) if detections else []
-                }
+                },
+                'analysis_type': 'file_analysis'  # Identificar que é análise de arquivo
             }
+
+            # Enviar para servidor se solicitado
+            server_success = False
+            if server and (len(detections) > 0 or force_send):
+                self.logger.info("Enviando análise para o servidor...")
+                # Converter RGB de volta para BGR para manter compatibilidade com o servidor
+                original_image_bgr = cv2.cvtColor(original_image_rgb, cv2.COLOR_RGB2BGR)
+                server_success = self._send_data_to_server(
+                    original_image_bgr, 
+                    processed_image, 
+                    detections, 
+                    metadata
+                )
+            elif server and len(detections) == 0 and not force_send:
+                self.logger.info("Nenhuma detecção encontrada - não enviando para servidor")
 
             # Plot results
             if show_results:
@@ -481,8 +502,14 @@ class OverColetor:
                 # Add titles
                 src = image_path_or_url.split('/')[-1]
                 plt.suptitle(src, color='#DEDEDE', fontsize=14, fontweight='bold', y=0.98)
-                plt.title(f"{len(detections)} Detecções | Limiar: {self.CONFIDENCE_THRESHOLD} | Classe: {detections[0]['class'] if detections else 'N/A'}",
-                        color='white', fontsize=10, pad=10)
+                
+                # Título com informação sobre envio ao servidor
+                title_text = f"{len(detections)} Detecções | Limiar: {c} | Classe: {detections[0]['class'] if detections else 'N/A'}"
+                if server:
+                    status = "✓ Enviado" if server_success else "✗ Falha no envio"
+                    title_text += f" | Server: {status}"
+                
+                plt.title(title_text, color='white', fontsize=10, pad=10)
 
                 # Draw detections
                 for d in detections:
@@ -506,6 +533,7 @@ class OverColetor:
                 'detections': detections,
                 'metadata': metadata,
                 'original_image': original_image_rgb,  # Retornar imagem em RGB
+                'server_sent': server_success if server else False
             }
             
         except Exception as e:
@@ -514,7 +542,8 @@ class OverColetor:
                 'success': False,
                 'error': str(e),
                 'detections': [],
-                'metadata': {}
+                'metadata': {},
+                'server_sent': False
             }
         
     def _load_image_from_source(self, source):
